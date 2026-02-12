@@ -12,6 +12,7 @@ import (
 
 // Request from the React frontend
 type CompletionRequest struct {
+	// field, type, struct tag. The struct tag tells Go how to map this field when converting to/from JSON
 	Model     string `json:"model"`
 	Prompt    string `json:"prompt"`
 	MaxTokens int    `json:"max_tokens"`
@@ -31,7 +32,8 @@ type Usage struct {
 	CompletionTokens int `json:"completion_tokens"`
 }
 
-// Ollama API request format
+// Using Ollama as the inference engine. This is the request format that it uses.
+// It exposes a local API on port 11434
 type OllamaRequest struct {
 	Model  string `json:"model"`
 	Prompt string `json:"prompt"`
@@ -39,9 +41,18 @@ type OllamaRequest struct {
 }
 
 // Ollama API response format
+// Not all of these fields are used but this is the full response format you get from Ollama
 type OllamaResponse struct {
-	Response string `json:"response"`
+	Model         string `json:"model"`
+	Response      string `json:"response"`
+	Done          bool   `json:"done"`
+	TotalDuration int64  `json:"total_duration"`
+	EvalCount     int    `json:"eval_count"`
 }
+
+// ---------------------------------------------------------------------- //
+// ---------------------------------------------------------------------- //
+// ---------------------------------------------------------------------- //
 
 func enableCORS(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -85,12 +96,15 @@ func handleCompletion(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Send to Ollama
+	// Starts timer for request to model. This is not for the latency metric which is calculated by the frontend it is for logging server side latency
 	start := time.Now()
 	resp, err := http.Post("http://localhost:11434/api/generate", "application/json", bytes.NewBuffer(ollamaBody))
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Ollama error: %v", err), http.StatusBadGateway)
 		return
 	}
+
+	// Do this later once the function finishes execution
 	defer resp.Body.Close()
 
 	// Read Ollama response
@@ -106,6 +120,7 @@ func handleCompletion(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Ends timer and stores result in elapsed
 	elapsed := time.Since(start)
 
 	// Estimate tokens (rough: split by spaces)
