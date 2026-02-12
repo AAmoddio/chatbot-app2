@@ -128,9 +128,10 @@ function App() {
 					},
 				]);
 			}
-		} catch (error) {
-			setMessages((prev) => [
-				...prev,
+		} catch (err) {
+      // Changed 'prev' to 'currentMessages'
+			setMessages((currectMessages) => [
+				...currectMessages,
 				{ role: "assistant", content: `Error: Could not connect to backend` },
 			]);
 		} finally {
