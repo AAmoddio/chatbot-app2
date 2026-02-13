@@ -23,8 +23,8 @@ interface Message {
 
 // Created a Response interface to be used for catching any reponses from response.json() that dont match the expected format
 interface ApiResponse {
-	choices: { text: string }[];
-	usage?: { completion_tokens: number };
+    message: { role: string; content: string };
+    usage?: { completion_tokens: number };
 }
 
 function App() {
@@ -86,13 +86,13 @@ function App() {
 			// Logs startTime for metrics - used later
 			const startTime = performance.now();
 			// This is where the actual request to the model gets made. Function execution is paused with await until a response is returned
-			const response = await fetch(`${BACKEND_URL}/v1/completions`, {
+			const response = await fetch(`${BACKEND_URL}/v1/chat`, {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({
 					// State variables for model, prompt and maxTokens passed in below
 					model: model,
-					prompt: input,
+					messages: [...messages, { role: "user", content: input }],
 					max_tokens: maxTokens,
 				}),
 			});
@@ -104,7 +104,7 @@ function App() {
 				// Parses the raw HTTP reponse into a javascript object. Waits for the response body to be fully downloaded
 				// Specified data as type Response so that it will error if the response back does match that interface
 				const data: ApiResponse = await response.json();
-				const text = data.choices[0].text;
+				const text = data.message.content;
 
 				// ?? - nullish coalescing operator. If left side is null or undefined then use right side
 				const tokens = data.usage?.completion_tokens ?? text.split(" ").length;
@@ -130,8 +130,8 @@ function App() {
 			}
 		} catch (err) {
       // Changed 'prev' to 'currentMessages'
-			setMessages((currectMessages) => [
-				...currectMessages,
+			setMessages((currentMessages) => [
+				...currentMessages,
 				{ role: "assistant", content: `Error: Could not connect to backend` },
 			]);
 		} finally {

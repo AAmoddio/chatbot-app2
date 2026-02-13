@@ -10,23 +10,28 @@ import (
 	"time"
 )
 
+type Message struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+
 // Request from the React frontend
-type CompletionRequest struct {
-	// field, type, struct tag. The struct tag tells Go how to map this field when converting to/from JSON
-	Model     string `json:"model"`
-	Prompt    string `json:"prompt"`
-	MaxTokens int    `json:"max_tokens"`
+type ChatRequest struct {
+	Model     string    `json:"model"`
+	Messages  []Message `json:"messages"`
+	MaxTokens int       `json:"max_tokens"`
 }
 
 // Response back to the React frontend
-type CompletionResponse struct {
-	Choices []Choice `json:"choices"`
-	Usage   Usage    `json:"usage"`
+type ChatResponse struct {
+	Message Message `json:"message"`
+	Usage   Usage   `json:"usage"`
 }
 
-type Choice struct {
-	Text string `json:"text"`
-}
+// Redundant Choice struct after moving to /chat endpoint
+// type Choice struct {
+// 	Text string `json:"text"`
+// }
 
 type Usage struct {
 	CompletionTokens int `json:"completion_tokens"`
@@ -34,20 +39,20 @@ type Usage struct {
 
 // Using Ollama as the inference engine. This is the request format that it uses.
 // It exposes a local API on port 11434
-type OllamaRequest struct {
-	Model  string `json:"model"`
-	Prompt string `json:"prompt"`
-	Stream bool   `json:"stream"`
+type OllamaChatRequest struct {
+	Model    string    `json:"model"`
+	Messages []Message `json:"messages"`
+	Stream   bool      `json:"stream"`
 }
 
 // Ollama API response format
 // Not all of these fields are used but this is the full response format you get from Ollama
 type OllamaResponse struct {
-	Model         string `json:"model"`
-	Response      string `json:"response"`
-	Done          bool   `json:"done"`
-	TotalDuration int64  `json:"total_duration"`
-	EvalCount     int    `json:"eval_count"`
+	Model         string  `json:"model"`
+	Message       Message `json:"message"`
+	Done          bool    `json:"done"`
+	TotalDuration int64   `json:"total_duration"`
+	EvalCount     int     `json:"eval_count"`
 }
 
 // ---------------------------------------------------------------------- //
@@ -81,7 +86,7 @@ func handleCompletion(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Parse request from frontend into req - CompletionRequest struct
-	var req CompletionRequest
+	var req ChatRequest
 
 	// Checks struct tags and parses / maps the keys in r.body to the correct fields in CompletionRequest
 	err := json.NewDecoder(r.Body).Decode(&req)
@@ -94,10 +99,10 @@ func handleCompletion(w http.ResponseWriter, r *http.Request) {
 
 	// Build Ollama request
 	// creates a new struct and assigns the fields from the respective fields in req
-	ollamaReq := OllamaRequest{
-		Model:  req.Model,
-		Prompt: req.Prompt,
-		Stream: false,
+	ollamaReq := OllamaChatRequest{
+		Model:    req.Model,
+		Messages: req.Messages,
+		Stream:   false,
 	}
 
 	// Converts ollamaReq struct into JSON bytes
@@ -111,7 +116,7 @@ func handleCompletion(w http.ResponseWriter, r *http.Request) {
 	// Starts timer for request to model. This is not for the latency metric which is calculated by the frontend it is for logging server side latency
 	start := time.Now()
 	// Posts ollamabody to ollama inference engine. The response back from ollama gets stored in resp. The 'model' field in the JSON body tells ollama which model to use.
-	resp, err := http.Post("http://localhost:11434/api/generate", "application/json", bytes.NewBuffer(ollamaBody))
+	resp, err := http.Post("http://localhost:11434/api/chat", "application/json", bytes.NewBuffer(ollamaBody))
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Ollama error: %v", err), http.StatusBadGateway)
 		return
@@ -140,11 +145,11 @@ func handleCompletion(w http.ResponseWriter, r *http.Request) {
 	elapsed := time.Since(start)
 
 	// Estimate tokens (rough: split by spaces)
-	tokens := len(bytes.Fields([]byte(ollamaResp.Response)))
+	tokens := ollamaResp.EvalCount
 
 	// Build response for frontend
-	response := CompletionResponse{
-		Choices: []Choice{{Text: ollamaResp.Response}},
+	response := ChatResponse{
+		Message: ollamaResp.Message,
 		Usage:   Usage{CompletionTokens: tokens},
 	}
 
@@ -159,7 +164,7 @@ func handleCompletion(w http.ResponseWriter, r *http.Request) {
 func main() {
 	// http.HandleFunc - built into Go std lib. (not the same as http.HanderFunc) Imported with net/http. This line means, when someone sends a request to '/v1/completions' run 'handleCompletion'
 	// Frontend hits backend on this line
-	http.HandleFunc("/v1/completions", enableCORS(handleCompletion))
+	http.HandleFunc("/v1/chat", enableCORS(handleCompletion))
 
 	fmt.Println("Backend running on http://localhost:8000")
 
